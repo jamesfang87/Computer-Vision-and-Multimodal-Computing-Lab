@@ -37,7 +37,6 @@ class Model(nn.Module):
 
             # audio visual fusion
             avfusion = torch.cat((audioEmbed, visualEmbed), dim=1)
-            print(avfusion)
 
             # fc layer
             fcOutput = self.fcModel(avfusion)
@@ -67,9 +66,6 @@ class Model(nn.Module):
             # calculate performance metrics
             loss += batch_loss.detach().cpu().numpy()
             num_correct += (fcOutput.argmax(1) == labels).type(torch.float).sum().item()
-            print(labels)
-            print(fcOutput)
-            print(fcOutput.argmax(1) == labels)
             
             index += len(labels)
             sys.stderr.write(time.strftime("%m-%d %H:%M:%S") + \
@@ -84,11 +80,11 @@ class Model(nn.Module):
         # return loss and lr
         return loss / len(loader), lr
     
-    def train_network(self, train_loader, val_loader):
+    def train_network(self, start_epoch, train_loader, val_loader):
         mAPs, losses = [], [] # holds mAP and losses for all epochs
         scoreFile = open(self.args['scoreSavePath'], "a+")
         bestmAP = 0
-        for epoch in range(1, self.args['maxEpoch'] + 1):
+        for epoch in range(start_epoch, self.args['maxEpoch'] + 1):
             # get loss and learning rate for current epoch
             loss, lr = self.train_step(epoch=epoch, loader=train_loader)
 
