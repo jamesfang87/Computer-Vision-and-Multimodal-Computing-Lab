@@ -1,0 +1,8 @@
+# ignore dataset
+AVDIAR_ASD/*
+
+# ignore .venv
+.venv/*
+
+# ignore pycache files
+*.pyc
