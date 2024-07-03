@@ -22,6 +22,7 @@ AVDIAR_ASD/*
 *.mp4
 *.txt
 *.pcm
+*.csv
 data/
 tests/
 exps/
