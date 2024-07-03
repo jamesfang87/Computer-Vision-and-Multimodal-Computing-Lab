@@ -96,7 +96,7 @@ class TalkNet(nn.Module):
                 continue
             selfState[name].copy_(param)
 
-        # transfer learning: only training the self attention part
+        # transfer learning: only training the fc layer in loss
         for param in self.model.visualFrontend.parameters():
             param.requires_grad = False 
 
@@ -113,4 +113,7 @@ class TalkNet(nn.Module):
             param.requires_grad = False
 
         for param in self.model.crossV2A.parameters():
+            param.requires_grad = False
+
+        for param in self.model.selfAV.parameters():
             param.requires_grad = False
