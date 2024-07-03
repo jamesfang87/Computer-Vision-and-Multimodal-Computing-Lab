@@ -110,7 +110,7 @@ def load_visual(data, dataPath, numImages, visualAug):
         elif augType == 'flip':
             faces.append(cv2.flip(face, 1))
         elif augType == 'crop':
-            faces.append(cv2.resize(face[y: y + new, x : x + new] , (H, H)))
+            faces.append(cv2.resize(face[y: y + new, x : x + new] , (H, H))) # type: ignore
         elif augType == 'rotate':
             faces.append(cv2.warpAffine(face, M, (H,H)))
     faces = numpy.array(faces)
