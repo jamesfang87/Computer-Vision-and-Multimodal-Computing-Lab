@@ -32,16 +32,17 @@ def main():
         preprocess_AVA(args)
         quit()
 
-    loader = TrainLoader(trialFileName = args.trainTrialAVA,
-                          audioPath = os.path.join(args.audioPathAVA , 'train'),
-                          visualPath = os.path.join(args.visualPathAVA, 'train'),
-                          **vars(args))
-    trainLoader = torch.utils.data.DataLoader(loader, batch_size=1, shuffle=True, num_workers = args.nDataLoaderThread) # type: ignore
+    loader = TrainLoader(trial_file_name=args.trainTrialAVA,
+                          audio_path=os.path.join(args.audioPathAVA , 'train'),
+                          visual_path=os.path.join(args.visualPathAVA, 'train'),
+                          batch_size=args.batchSize
+                    )
+    trainLoader = torch.utils.data.DataLoader(loader, batch_size=1, shuffle=True, num_workers=args.nDataLoaderThread) # type: ignore
 
-    loader = ValLoader(trialFileName = args.evalTrialAVA,
-                        audioPath = os.path.join(args.audioPathAVA , args.evalDataType),
-                        visualPath = os.path.join(args.visualPathAVA, args.evalDataType),
-                        **vars(args))
+    loader = ValLoader(trial_file_name=args.evalTrialAVA,
+                        audio_path=os.path.join(args.audioPathAVA , args.evalDataType),
+                        visual_path=os.path.join(args.visualPathAVA, args.evalDataType),
+                    )
     valLoader = torch.utils.data.DataLoader(loader, batch_size=1, shuffle=False, num_workers=16) # type: ignore
 
     if args.evaluation == True:

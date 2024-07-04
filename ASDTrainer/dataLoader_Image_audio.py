@@ -60,8 +60,7 @@ def load_audio(data, dataPath, audio = None):
     """
     return audio
 
-def load_visual(data, dataPath, numImages, visualAug): 
-    dataName = data[0]
+def load_visual(data, dataPath, numImages, visualAug):
     videoName = data[0]
     entityID = data[7]
 
@@ -130,7 +129,6 @@ class TrainLoader:
         audioPath = audioPath.replace('clips', 'orig')
         self.audioPath  = audioPath
         self.visualPath = visualPath
-        #self.miniBatch = []      
         
         self.mixLst = open(trialFileName).read().splitlines()[1:] # since the first line contains column names
         self.sampleAudioLength = loadAudioSeconds

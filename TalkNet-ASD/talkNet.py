@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import sys, time, numpy, os, subprocess, pandas, tqdm
-
+import sys, time, numpy, os, subprocess, pandas
+from tqdm import tqdm
 from loss import lossAV, lossA, lossV
 from model.talkNetModel import talkNetModel
 
@@ -11,12 +11,12 @@ class TalkNet(nn.Module):
     def __init__(self, **kwargs):
         super(TalkNet, self).__init__()     
         self.args = kwargs
-        self.model = talkNetModel().cuda()
-        self.lossAV = lossAV().cuda()
-        self.lossA = lossA().cuda()
-        self.lossV = lossV().cuda()
+        self.model = talkNetModel().cpu()
+        self.lossAV = lossAV().cpu()
+        self.lossA = lossA().cpu()
+        self.lossV = lossV().cpu()
         self.optim = torch.optim.Adam(self.parameters(), lr=self.args['lr'])
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optim, step_size = 1, gamma=self.args['lrDecay'])
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optim, step_size=1, gamma=self.args['lrDecay'])
         print(time.strftime("%m-%d %H:%M:%S") + " Model para number = %.2f"%(sum(param.numel() for param in self.model.parameters()) / 1024 / 1024))
 
     def train_network(self, loader, epoch):
@@ -25,15 +25,34 @@ class TalkNet(nn.Module):
         index, top1, loss = 0, 0, 0
         lr = self.optim.param_groups[0]['lr']        
         for num, (audioFeature, visualFeature, labels) in enumerate(loader, start=1):
+
+            print(f"audio feature shape: {audioFeature.shape}")
+            print(f"visual feature shape: {visualFeature.shape}")
+
             self.zero_grad()
-            audioEmbed = self.model.forward_audio_frontend(audioFeature[0].cuda()) # feedForward
-            visualEmbed = self.model.forward_visual_frontend(visualFeature[0].cuda())
+            audioEmbed = self.model.forward_audio_frontend(audioFeature[0].cpu()) # feedForward
+            visualEmbed = self.model.forward_visual_frontend(visualFeature[0].cpu())
+            
+            print(f"audio embedding shape: {audioEmbed.shape}")
+            print(f"visual embeeding shape: {visualEmbed.shape}")
+
+            
             audioEmbed, visualEmbed = self.model.forward_cross_attention(audioEmbed, visualEmbed)
-            outsAV= self.model.forward_audio_visual_backend(audioEmbed, visualEmbed)  
+
+            print(f"audio embedding shape after cross attention: {audioEmbed.shape}")
+            print(f"visual embeeding shape after cross attention: {visualEmbed.shape}")
+
+            outsAV= self.model.forward_audio_visual_backend(audioEmbed, visualEmbed)
+
+            print(f"after self attention: {outsAV.shape}")
+
             outsA = self.model.forward_audio_backend(audioEmbed)
             outsV = self.model.forward_visual_backend(visualEmbed)
-            labels = labels[0].reshape((-1)).cuda() # Loss
+            labels = labels[0].reshape((-1)).cpu() # Loss
             nlossAV, _, _, prec = self.lossAV.forward(outsAV, labels)
+
+            print(prec.shape)
+
             nlossA = self.lossA.forward(outsA, labels)
             nlossV = self.lossV.forward(outsV, labels)
             nloss = nlossAV + 0.4 * nlossA.detach() + 0.4 * nlossV.detach()
@@ -52,28 +71,47 @@ class TalkNet(nn.Module):
     def evaluate_network(self, loader, evalCsvSave, evalOrig, **kwargs):
         self.eval()
         predScores = []
-        for audioFeature, visualFeature, labels in tqdm.tqdm(loader):
-            with torch.no_grad():                
-                audioEmbed  = self.model.forward_audio_frontend(audioFeature[0].cuda())
-                visualEmbed = self.model.forward_visual_frontend(visualFeature[0].cuda())
+        for audioFeature, visualFeature, labels in tqdm(loader):
+            with torch.no_grad():
+                print(f"audio feature shape: {audioFeature.shape}")
+                print(f"visual feature shape: {visualFeature.shape}")
+                audioEmbed  = self.model.forward_audio_frontend(audioFeature[0].cpu())
+                visualEmbed = self.model.forward_visual_frontend(visualFeature[0].cpu())
+
+                print(f"audio embedding shape: {audioEmbed.shape}")
+                print(f"visual embeeding shape: {visualEmbed.shape}")
+
                 audioEmbed, visualEmbed = self.model.forward_cross_attention(audioEmbed, visualEmbed)
-                outsAV= self.model.forward_audio_visual_backend(audioEmbed, visualEmbed)  
-                labels = labels[0].reshape((-1)).cuda()             
-                _, predScore, _, _ = self.lossAV.forward(outsAV, labels)    
+
+                print(f"audio embedding shape after cross attention: {audioEmbed.shape}")
+                print(f"visual embeeding shape after cross attention: {visualEmbed.shape}")
+
+                outsAV= self.model.forward_audio_visual_backend(audioEmbed, visualEmbed)
+
+                print(f"after self attention: {outsAV.shape}")
+
+                labels = labels[0].reshape((-1)).cpu()             
+                _, predScore, _, _ = self.lossAV.forward(outsAV, labels)
+
+                # print(predScore)
+                print(predScore.shape)
+
                 predScore = predScore[:,1].detach().cpu().numpy()
                 predScores.extend(predScore)
+        
+
         evalLines = open(evalOrig).read().splitlines()[1:]
-        labels = []
         labels = pandas.Series(['SPEAKING_AUDIBLE' for _ in evalLines])
         scores = pandas.Series(predScores)
+
         evalRes = pandas.read_csv(evalOrig)
-        evalRes['score'] = scores
         evalRes['label'] = labels
+        evalRes['score'] = scores
         evalRes.drop(['label_id'], axis=1,inplace=True)
         evalRes.drop(['instance_id'], axis=1,inplace=True)
         evalRes.to_csv(evalCsvSave, index=False)
         
-        # i changed this path because my working directory was somewhere else
+        # change path if working directory is elsewhere
         cmd = "python3 -O TalkNet-ASD/utils/get_ava_active_speaker_performance.py -g %s -p %s "%(evalOrig, evalCsvSave)
         mAP = float(str(subprocess.run(cmd, shell=True, capture_output=True).stdout).split(' ')[2][:5])
         return mAP
@@ -83,7 +121,7 @@ class TalkNet(nn.Module):
 
     def loadParameters(self, path):
         selfState = self.state_dict()
-        loadedState = torch.load(path)
+        loadedState = torch.load(path, map_location=torch.device('cpu'))
         for name, param in loadedState.items():
             origName = name
             if name not in selfState:

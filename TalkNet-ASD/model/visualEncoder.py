@@ -24,7 +24,7 @@ class ResNetLayer(nn.Module):
         self.bn1a = nn.BatchNorm2d(outplanes, momentum=0.01, eps=0.001)
         self.conv2a = nn.Conv2d(outplanes, outplanes, kernel_size=3, stride=1, padding=1, bias=False)
         self.stride = stride
-        self.downsample = nn.Conv2d(inplanes, outplanes, kernel_size=(1,1), stride=stride, bias=False)
+        self.downsample = nn.Conv2d(inplanes, outplanes, kernel_size=(1, 1), stride=stride, bias=False)
         self.outbna = nn.BatchNorm2d(outplanes, momentum=0.01, eps=0.001)
 
         self.conv1b = nn.Conv2d(outplanes, outplanes, kernel_size=3, stride=1, padding=1, bias=False)
@@ -67,9 +67,6 @@ class ResNet(nn.Module):
         self.layer3 = ResNetLayer(128, 256, stride=2)
         self.layer4 = ResNetLayer(256, 512, stride=2)
         self.avgpool = nn.AvgPool2d(kernel_size=(4,4), stride=(1,1))
-        
-        return
-
 
     def forward(self, inputBatch):
         batch = self.layer1(inputBatch)
@@ -139,7 +136,7 @@ class DSConv1d(nn.Module):
             nn.PReLU(),
             GlobalLayerNorm(512),
             nn.Conv1d(512, 512, 1, bias=False),
-            )
+        )
 
     def forward(self, x):
         out = self.net(x)
@@ -165,7 +162,7 @@ class visualConv1D(nn.Module):
             nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Conv1d(256, 128, 1),
-            )
+        )
 
     def forward(self, x):
         out = self.net(x)
