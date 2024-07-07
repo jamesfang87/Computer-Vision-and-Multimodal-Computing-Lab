@@ -32,10 +32,10 @@ class talkNetModel(nn.Module):
         x = (x / 255 - 0.4161) / 0.1688
         x = self.visualFrontend(x)
         x = x.view(B, T, 512)        
-        x = x.transpose(1,2)     
+        x = x.transpose(1, 2)
         x = self.visualTCN(x)
         x = self.visualConv1D(x)
-        x = x.transpose(1,2)
+        x = x.transpose(1, 2)
         return x
 
     def forward_audio_frontend(self, x):    
