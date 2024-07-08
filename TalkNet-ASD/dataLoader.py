@@ -1,4 +1,4 @@
-import os, torch, numpy, cv2, random, glob, python_speech_features, pandas
+import os, torch, numpy as np, cv2, random, glob, python_speech_features, pandas
 from scipy.io import wavfile
 
 
@@ -28,15 +28,15 @@ def overlap(data_name, audio, audio_set):
     # align noise and original audio to have the same length
     if len(noise_audio) < len(audio):
         shortage = len(audio) - len(noise_audio)
-        noise_audio = numpy.pad(noise_audio, (0, shortage), 'wrap')
+        noise_audio = np.pad(noise_audio, (0, shortage), 'wrap')
     else:
         noise_audio = noise_audio[:len(audio)]
     
-    noise_DB = 10 * numpy.log10(numpy.mean(abs(noise_audio ** 2)) + 1e-4)
-    clean_DB = 10 * numpy.log10(numpy.mean(abs(audio ** 2)) + 1e-4)
-    noise_audio = numpy.sqrt(10 ** ((clean_DB - noise_DB - snr) / 10)) * noise_audio
+    noise_DB = 10 * np.log10(np.mean(abs(noise_audio ** 2)) + 1e-4)
+    clean_DB = 10 * np.log10(np.mean(abs(audio ** 2)) + 1e-4)
+    noise_audio = np.sqrt(10 ** ((clean_DB - noise_DB - snr) / 10)) * noise_audio
     audio = audio + noise_audio    
-    return audio.astype(numpy.int16)
+    return audio.astype(np.int16)
 
 
 def load_audio(data: list[str], data_path: str, num_frames: int, augment_audio: bool, batch: list):
@@ -61,7 +61,7 @@ def load_audio(data: list[str], data_path: str, num_frames: int, augment_audio: 
     max_audio = int(num_frames * 4)
     if audio.shape[0] < max_audio:
         shortage = max_audio - audio.shape[0]
-        audio = numpy.pad(audio, ((0, shortage), (0,0)), 'wrap')
+        audio = np.pad(audio, ((0, shortage), (0,0)), 'wrap')
     audio = audio[:int(round(num_frames * 4)),:]  
     return audio
 
@@ -94,13 +94,13 @@ def load_visual(data: list[str], data_path: str, num_frames: int, augment_visual
             faces.append(cv2.flip(face, 1))
         elif aug_type == 'crop':
             new = int(img_size * random.uniform(0.7, 1))
-            x, y = numpy.random.randint(0, img_size - new), numpy.random.randint(0, img_size - new)
+            x, y = np.random.randint(0, img_size - new), np.random.randint(0, img_size - new)
             faces.append(cv2.resize(face[y:y + new, x:x + new] , (img_size, img_size))) # type: ignore
         elif aug_type == 'rotate':
             M = cv2.getRotationMatrix2D((img_size / 2, img_size / 2), random.uniform(-15, 15), 1)
             faces.append(cv2.warpAffine(face, M, (img_size, img_size)))
 
-    faces = numpy.array(faces)
+    faces = np.array(faces)
     return faces
 
 
@@ -110,7 +110,7 @@ def load_label(data: list[str], num_frames: int):
     labels = labels.split(',')
     for label in labels:
         res.append(int(label))
-    res = numpy.array(res[:num_frames])
+    res = np.array(res[:num_frames])
     return res
 
 
@@ -143,8 +143,6 @@ def load_context_speakers(data: pandas.DataFrame, target_speaker: str, sample_fn
         if overlap_duration > (ts_last_appearance - ts_first_appearance) / 2:
             candidate_context_speakers.append([entity, first_appearance, last_appearance])
 
-        
-
     return candidate_context_speakers
 
 
@@ -152,65 +150,52 @@ class TrainLoader():
     def __init__(self, trial_file_name: str, audio_path: str, visual_path: str, batch_size: int):
         self.audio_path  = audio_path
         self.visual_path = visual_path
-        self.batches = []
+        self.batches = open(trial_file_name).read().splitlines() # batch size of 1
         self.data = pandas.read_csv('AVDIAR_ASD/csv/train_orig.csv')
-
-        samples = open(trial_file_name).read().splitlines()
-        # sort the training set by the length of the videos, shuffle them to make more videos in the same batch belong to different movies
-        sorted_samples = sorted(samples, key=lambda data: (int(data.split('\t')[1]), int(data.split('\t')[-1])), reverse=True)         
-        
-        # assign samples to batches
-        start = 0
-        while start != len(sorted_samples):
-            length = int(sorted_samples[start].split('\t')[1])
-            end = min(len(sorted_samples), start + max(int(batch_size / length), 1))
-            self.batches.append(sorted_samples[start:end])
-            start = end
 
     def __getitem__(self, index):
         """
         returns audio features, visual features, and labels as tuple of Tensors for a batch.
         """
-        batch = self.batches[index]
-        num_frames = int(batch[-1].split('\t')[1])
-        audio_features, visual_features, labels = [], [], []
+
+        batch = [self.batches[index]]
+        num_frames = int(batch[0].split('\t')[1])
+        data: list[str] = batch[0].split('\t')
+
+        audio_features = [load_audio(data, self.audio_path, num_frames, False, batch)]
+        visual_features = [load_visual(data, self.visual_path, num_frames, False)]
+        labels = [load_label(data, num_frames)]
         context_speaker_features = []
-        
-        for sample in batch:
-            data = sample.split('\t')
-            target_speaker = data[0]
-            for context_speaker, first_appearance, last_appearance in load_context_speakers(self.data, data[0]):
-                unaligned = load_visual([context_speaker], self.visual_path, num_frames, True)
+
+        data = batch[0].split('\t')
+        target_speaker = data[0]
+        for context_speaker, first_appearance, _ in load_context_speakers(self.data, data[0]):
+            unaligned: np.ndarray = load_visual([context_speaker], self.visual_path, num_frames, True)
                 
-                # first and last appearance of the target speaker described by frame_timestamp
-                ts_first_appearance = float(self.data[self.data['entity_id'] == target_speaker].iloc[0]['frame_timestamp'])
-                ts_last_appearance = float(self.data[self.data['entity_id'] == target_speaker].iloc[-1]['frame_timestamp'])
+            # first appearance of the target speaker described by frame_timestamp
+            ts_first_appearance = float(self.data[self.data['entity_id'] == target_speaker].iloc[0]['frame_timestamp'])
 
-                # align visual feature of context speaker with features of target speaker temporally by zero-padding
-                if ts_first_appearance < first_appearance:
-                    # zero pad the beginning
-                    # calculate the amount of frames between first appearances
-                    gap = int((first_appearance - ts_first_appearance) / 0.04)
-                    unaligned = numpy.concatenate((numpy.zeros((gap, 112, 112)), unaligned))
-                else:
-                    gap = int((ts_first_appearance - first_appearance) / 0.04)
-                    unaligned = unaligned[gap: ]
+            # align visual feature of context speaker with features of target speaker temporally by zero-padding
+            # calculate the amount of frames between first appearances
+            gap = int(abs(first_appearance - ts_first_appearance) / 0.04)
+            if ts_first_appearance < first_appearance:
+                # zero pad the beginning
+                unaligned = np.concatenate((np.zeros((gap, 112, 112)), unaligned))
+            else:
+                unaligned = unaligned[gap:]
 
-                if len(unaligned) > num_frames:
-                    aligned = unaligned[:num_frames]
-                else:
-                    gap = num_frames - len(unaligned)
-                    aligned = numpy.concatenate((unaligned, numpy.zeros((gap, 112, 112))))
+            if len(unaligned) > num_frames:
+                aligned = unaligned[:num_frames]
+            else:
+                gap = num_frames - len(unaligned)
+                aligned = np.concatenate((unaligned, np.zeros((gap, 112, 112))))
                 
-                context_speaker_features.append(aligned)
-            # print(f'Speaker id: {data[0]} \tContext speakers: {load_context_speakers(self.data, data[0])}')
-            audio_features.append(load_audio(data, self.audio_path, num_frames, True, batch))
-            visual_features.append(load_visual(data, self.visual_path, num_frames, True))
-            labels.append(load_label(data, num_frames))
+            context_speaker_features.append(aligned)
 
-        return (torch.FloatTensor(numpy.array(audio_features)),
-                torch.FloatTensor(numpy.array(visual_features)),
-                torch.LongTensor(numpy.array(labels)))    
+        return (torch.FloatTensor(np.array(audio_features)),
+                torch.FloatTensor(np.array(visual_features)),
+                torch.FloatTensor(np.array(context_speaker_features)),
+                torch.LongTensor(np.array(labels)))
 
     def __len__(self):
         """
@@ -240,9 +225,9 @@ class ValLoader():
         visual_features = [load_visual(data, self.visual_path, num_frames, False)]
         labels = [load_label(data, num_frames)]
 
-        return (torch.FloatTensor(numpy.array(audio_features)),
-                torch.FloatTensor(numpy.array(visual_features)),
-                torch.LongTensor(numpy.array(labels)))
+        return (torch.FloatTensor(np.array(audio_features)),
+                torch.FloatTensor(np.array(visual_features)),
+                torch.LongTensor(np.array(labels)))
 
     def __len__(self):
         """

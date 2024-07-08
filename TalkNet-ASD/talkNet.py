@@ -28,21 +28,23 @@ class TalkNet(nn.Module):
         self.train()
         self.scheduler.step(epoch - 1)
         index, top1, loss = 0, 0, 0
-        lr = self.optim.param_groups[0]['lr']        
-        for num, (audioFeature, visualFeature, labels) in enumerate(loader, start=1):
+        lr = self.optim.param_groups[0]['lr']  
+        for num, (audioFeature, visualFeature, context_speaker_features, labels) in enumerate(loader, start=1):
             self.zero_grad()
-
             
             print(f"audio feature shape: {audioFeature.shape}")
             print(f"visual feature shape: {visualFeature.shape}")
 
             audioEmbed = self.model.forward_audio_frontend(audioFeature[0].to(self.device)) # feedForward
             visualEmbed = self.model.forward_visual_frontend(visualFeature[0].to(self.device))
+
+            cs_embed = self.model.forward_visual_frontend(context_speaker_features[0])
             
             print(f"audio embedding shape: {audioEmbed.shape}")
             print(f"visual embeeding shape: {visualEmbed.shape}")
             
             audioEmbed, visualEmbed = self.model.forward_cross_attention(audioEmbed, visualEmbed)
+
             print(f"audio embedding shape after cross attention: {audioEmbed.shape}")
             print(f"visual embeeding shape after cross attention: {visualEmbed.shape}")
             
@@ -134,25 +136,3 @@ class TalkNet(nn.Module):
                 sys.stderr.write("Wrong parameter length: %s, model: %s, loaded: %s"%(origName, selfState[name].size(), loadedState[origName].size()))
                 continue
             selfState[name].copy_(param)
-
-        # transfer learning: only training the fc layer in loss
-        for param in self.model.visualFrontend.parameters():
-            param.requires_grad = False 
-
-        for param in self.model.visualTCN.parameters():
-            param.requires_grad = False
-
-        for param in self.model.visualConv1D.parameters():
-            param.requires_grad = False
-
-        for param in self.model.audioEncoder.parameters():
-            param.requires_grad = False
-        
-        for param in self.model.crossA2V.parameters():
-            param.requires_grad = False
-
-        for param in self.model.crossV2A.parameters():
-            param.requires_grad = False
-
-        for param in self.model.selfAV.parameters():
-            param.requires_grad = False

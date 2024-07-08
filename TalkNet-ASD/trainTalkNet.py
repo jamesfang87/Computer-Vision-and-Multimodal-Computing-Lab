@@ -14,7 +14,7 @@ def main():
     parser.add_argument('--lrDecay', type=float, default=0.95, help='Learning rate decay rate')
     parser.add_argument('--maxEpoch', type=int, default=25, help='Maximum number of epochs')
     parser.add_argument('--testInterval', type=int, default=1, help='Test and save every [testInterval] epochs')
-    parser.add_argument('--batchSize', type=int, default=1000, help='Dynamic batch size, default is 1000 frames, other batchsize (such as 1500) will not affect the performance')
+    parser.add_argument('--batchSize', type=int, default=150, help='Dynamic batch size, default is 1000 frames, other batchsize (such as 1500) will not affect the performance')
     parser.add_argument('--nDataLoaderThread', type=int, default=4, help='Number of loader threads')
     # Data path
     parser.add_argument('--dataPathAVA', type=str, default="AVDIAR_ASD", help='Save path of AVA dataset')
@@ -36,7 +36,7 @@ def main():
         trial_file_name=args.trainTrialAVA,
         audio_path=os.path.join(args.audioPathAVA , 'train'),
         visual_path=os.path.join(args.visualPathAVA, 'train'),
-        batch_size=args.batchSize
+        batch_size=1
     )
     train_loader = torch.utils.data.DataLoader(loader, batch_size=1, shuffle=True, num_workers=args.nDataLoaderThread) # type: ignore
 
