@@ -13,7 +13,7 @@ class TalkNet(nn.Module):
 
         # move models to gpu if possible
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print(self.device)
+        print(f"using {self.device}")
 
         self.args = kwargs
         self.model = talkNetModel().to(self.device)
@@ -22,41 +22,58 @@ class TalkNet(nn.Module):
         self.lossV = lossV().to(self.device)
         self.optim = torch.optim.Adam(self.parameters(), lr=self.args['lr'])
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optim, step_size=1, gamma=self.args['lrDecay'])
+        
+        self.schedule = torch.optim.lr_scheduler.OneCycleLR(self.optim, max_lr=0.0001, steps_per_epoch=len(data_loader), epochs=25)
+
         print(time.strftime("%m-%d %H:%M:%S") + " Model para number = %.2f"%(sum(param.numel() for param in self.model.parameters()) / 1024 / 1024))
 
     def train_network(self, loader, epoch):
         self.train()
         self.scheduler.step(epoch - 1)
         index, top1, loss = 0, 0, 0
-        lr = self.optim.param_groups[0]['lr']  
+        lr = self.optim.param_groups[0]['lr']
+
         for num, (audioFeature, visualFeature, context_speaker_features, labels) in enumerate(loader, start=1):
             self.zero_grad()
-            
-            print(f"audio feature shape: {audioFeature.shape}")
-            print(f"visual feature shape: {visualFeature.shape}")
 
-            audioEmbed = self.model.forward_audio_frontend(audioFeature[0].to(self.device)) # feedForward
-            visualEmbed = self.model.forward_visual_frontend(visualFeature[0].to(self.device))
+            # generate visual embeddings for target speaker and context speakers
+            combined_visual_features = torch.concat((visualFeature[0], context_speaker_features[0]))
+            visualEmbeds = self.model.forward_visual_frontend(combined_visual_features.to(self.device))
 
-            cs_embed = self.model.forward_visual_frontend(context_speaker_features[0])
+            # split into target speaker visual embeddings and context speakers visual embeddings
+            target_speaker = visualEmbeds[0].unsqueeze(0)
+            context_speakers = visualEmbeds[1:]
             
-            print(f"audio embedding shape: {audioEmbed.shape}")
-            print(f"visual embeeding shape: {visualEmbed.shape}")
-            
-            audioEmbed, visualEmbed = self.model.forward_cross_attention(audioEmbed, visualEmbed)
+            # "zero pad" when there are less than 3 context speakers
+            # positions where the speakers should be are filled by zeros
+            if len(context_speakers) < 3:
+                needed = 3 - len(context_speakers)
+                num_frames = target_speaker.shape[1]
+                context_speakers = torch.concat((context_speakers, torch.zeros((needed, num_frames, 128)).to(self.device)))
 
-            print(f"audio embedding shape after cross attention: {audioEmbed.shape}")
-            print(f"visual embeeding shape after cross attention: {visualEmbed.shape}")
+            # generate audio embeddigns for target speaker
+            audioEmbed = self.model.forward_audio_frontend(audioFeature[0].to(self.device))
+
+            # cross attention for target speaker and each context speakers
+            # queries come from target speaker, keys and values from each context speaker
+            context_features = self.model.forward_context(target_speaker.repeat(3, 1, 1), context_speakers)
+            context_features = context_features.sum(dim=0)
             
-            outsAV= self.model.forward_audio_visual_backend(audioEmbed, visualEmbed)
+            # cross attention for audio and visual embeddings
+            audioEmbed, visualEmbeds = self.model.forward_cross_attention(audioEmbed, target_speaker)
             
-            print(f"after self attention: {outsAV.shape}")
-            
+            # audio-visual self-attention
+            outsAV = self.model.forward_audio_visual_backend(audioEmbed, target_speaker)
+            idkwhattocallthis = torch.concat((context_features, outsAV), dim=1)
+
             outsA = self.model.forward_audio_backend(audioEmbed)
-            outsV = self.model.forward_visual_backend(visualEmbed)
+            outsV = self.model.forward_visual_backend(target_speaker)
             
-            labels = labels[0].reshape((-1)).to(self.device) # Loss
-            nlossAV, _, _, prec = self.lossAV.forward(outsAV, labels)
+            # reshape labels
+            labels = labels[0].reshape((-1)).to(self.device)
+            
+            # Loss
+            nlossAV, _, _, prec = self.lossAV.forward(idkwhattocallthis, labels)
             nlossA = self.lossA.forward(outsA, labels)
             nlossV = self.lossV.forward(outsV, labels)
 
@@ -78,31 +95,48 @@ class TalkNet(nn.Module):
     def evaluate_network(self, loader, evalCsvSave, evalOrig, **kwargs):
         self.eval()
         predScores = []
-        for audioFeature, visualFeature, labels in tqdm(loader):
+        for (audioFeature, visualFeature, context_speaker_features, labels) in tqdm(loader):
             with torch.no_grad():
-                audioEmbed  = self.model.forward_audio_frontend(audioFeature[0].to(self.device))
-                visualEmbed = self.model.forward_visual_frontend(visualFeature[0].to(self.device))
+                # generate visual embeddings for target speaker and context speakers
+                combined_visual_features = torch.concat((visualFeature[0], context_speaker_features[0]))
+                visualEmbeds = self.model.forward_visual_frontend(combined_visual_features.to(self.device))
 
+                # split into target speaker visual embeddings and context speakers visual embeddings
+                target_speaker = visualEmbeds[0].unsqueeze(0)
+                context_speakers = visualEmbeds[1:]
                 
+                # "zero pad" when there are less than 3 context speakers
+                # positions where the speakers should be are filled by zeros
+                if len(context_speakers) < 3:
+                    needed = 3 - len(context_speakers)
+                    num_frames = target_speaker.shape[1]
+                    context_speakers = torch.concat((context_speakers, torch.zeros((needed, num_frames, 128)).to(self.device)))
 
-                audioEmbed, visualEmbed = self.model.forward_cross_attention(audioEmbed, visualEmbed)
+                # generate audio embeddigns for target speaker
+                audioEmbed = self.model.forward_audio_frontend(audioFeature[0].to(self.device))
 
+                # cross attention for target speaker and each context speakers
+                # queries come from target speaker, keys and values from each context speaker
+                context_features = self.model.forward_context(target_speaker.repeat(3, 1, 1), context_speakers)
+                context_features = context_features.sum(dim=0)
                 
+                # cross attention for audio and visual embeddings
+                audioEmbed, visualEmbeds = self.model.forward_cross_attention(audioEmbed, target_speaker)
+                
+                # audio-visual self-attention
+                outsAV = self.model.forward_audio_visual_backend(audioEmbed, target_speaker)
+                idkwhattocallthis = torch.concat((context_features, outsAV), dim=1)
 
-                outsAV= self.model.forward_audio_visual_backend(audioEmbed, visualEmbed)
 
-                print(f"after self attention: {outsAV.shape}")
+                # reshape labels
+                labels = labels[0].reshape((-1)).to(self.device)
 
-                labels = labels[0].reshape((-1)).to(self.device)             
-                _, predScore, _, _ = self.lossAV.forward(outsAV, labels)
+                # lossAV includes final FC layer used for predictions
+                _, predScore, _, _ = self.lossAV.forward(idkwhattocallthis, labels)
 
-                # print(predScore)
-                #print(predScore.shape)
-
-                predScore = predScore[:,1].detach().cpu().numpy()
+                predScore = predScore[:, 1].detach().cpu().numpy()
                 predScores.extend(predScore)
         
-
         evalLines = open(evalOrig).read().splitlines()[1:]
         labels = pandas.Series(['SPEAKING_AUDIBLE' for _ in evalLines])
         scores = pandas.Series(predScores)

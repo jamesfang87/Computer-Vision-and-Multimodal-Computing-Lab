@@ -21,10 +21,11 @@ class attentionLayer(nn.Module):
         self.activation = F.relu
 
     def forward(self, src, tar):
-        # type: (Tensor, Optional[Tensor], Optional[Tensor]) -> Tensor
+        # type: (torch.Tensor, Optional[Tensor], Optional[Tensor]) -> Tensor
         src = src.transpose(0, 1) # B, T, C -> T, B, C
         tar = tar.transpose(0, 1) # B, T, C -> T, B, C
-        src2 = self.self_attn(tar, src, src, attn_mask=None,
+        src2 = self.self_attn(tar, src, src, 
+                              attn_mask=None,
                               key_padding_mask=None)[0]
         src = src + self.dropout1(src2)
         src = self.norm1(src)

@@ -18,7 +18,7 @@ def main():
     parser.add_argument('--nDataLoaderThread', type=int, default=4, help='Number of loader threads')
     # Data path
     parser.add_argument('--dataPathAVA', type=str, default="AVDIAR_ASD", help='Save path of AVA dataset')
-    parser.add_argument('--savePath', type=str, default="TalkNet-ASD/test")
+    parser.add_argument('--savePath', type=str, default="TalkNet-ASD/context2")
     # Data selection
     parser.add_argument('--evalDataType', type=str, default="val", help='Only for AVA, to choose the dataset for evaluation, val or test')
     # For download dataset only, for evaluation only
@@ -38,7 +38,7 @@ def main():
         visual_path=os.path.join(args.visualPathAVA, 'train'),
         batch_size=1
     )
-    train_loader = torch.utils.data.DataLoader(loader, batch_size=1, shuffle=True, num_workers=args.nDataLoaderThread) # type: ignore
+    train_loader = torch.utils.data.DataLoader(loader, batch_size=1, shuffle=False, num_workers=args.nDataLoaderThread) # type: ignore
 
     loader = ValLoader(
         trial_file_name=args.evalTrialAVA,

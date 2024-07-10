@@ -114,7 +114,7 @@ def load_label(data: list[str], num_frames: int):
     return res
 
 
-def load_context_speakers(data: pandas.DataFrame, target_speaker: str, sample_fn=None):
+def load_context_speakers(data: pandas.DataFrame, target_speaker: str):
     """
     Loads context speakers in a video given a target speaker
 
@@ -209,6 +209,7 @@ class ValLoader():
         self.audio_path = audio_path
         self.visual_path = visual_path
         self.batches = open(trial_file_name).read().splitlines() # batch size of 1
+        self.data = pandas.read_csv('AVDIAR_ASD/csv/val_orig.csv')
 
     def __getitem__(self, index):
         """
@@ -217,6 +218,7 @@ class ValLoader():
         batch size for validation set is 1.
         variable names are in terms of batches to be consistent with TrainLoader and other functions written for it
         """
+
         batch = [self.batches[index]]
         num_frames = int(batch[0].split('\t')[1])
         data: list[str] = batch[0].split('\t')
@@ -224,9 +226,36 @@ class ValLoader():
         audio_features = [load_audio(data, self.audio_path, num_frames, False, batch)]
         visual_features = [load_visual(data, self.visual_path, num_frames, False)]
         labels = [load_label(data, num_frames)]
+        context_speaker_features = []
+
+        data = batch[0].split('\t')
+        target_speaker = data[0]
+        for context_speaker, first_appearance, _ in load_context_speakers(self.data, data[0]):
+            unaligned: np.ndarray = load_visual([context_speaker], self.visual_path, num_frames, True)
+                
+            # first appearance of the target speaker described by frame_timestamp
+            ts_first_appearance = float(self.data[self.data['entity_id'] == target_speaker].iloc[0]['frame_timestamp'])
+
+            # align visual feature of context speaker with features of target speaker temporally by zero-padding
+            # calculate the amount of frames between first appearances
+            gap = int(abs(first_appearance - ts_first_appearance) / 0.04)
+            if ts_first_appearance < first_appearance:
+                # zero pad the beginning
+                unaligned = np.concatenate((np.zeros((gap, 112, 112)), unaligned))
+            else:
+                unaligned = unaligned[gap:]
+
+            if len(unaligned) > num_frames:
+                aligned = unaligned[:num_frames]
+            else:
+                gap = num_frames - len(unaligned)
+                aligned = np.concatenate((unaligned, np.zeros((gap, 112, 112))))
+                
+            context_speaker_features.append(aligned)
 
         return (torch.FloatTensor(np.array(audio_features)),
                 torch.FloatTensor(np.array(visual_features)),
+                torch.FloatTensor(np.array(context_speaker_features)),
                 torch.LongTensor(np.array(labels)))
 
     def __len__(self):

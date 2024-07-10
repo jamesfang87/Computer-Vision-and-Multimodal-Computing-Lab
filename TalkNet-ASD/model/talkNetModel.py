@@ -4,6 +4,7 @@ import torch.nn as nn
 from model.audioEncoder      import audioEncoder
 from model.visualEncoder     import visualFrontend, visualTCN, visualConv1D
 from model.attentionLayer    import attentionLayer
+from model.context import ContextAttentionLayer
 
 class talkNetModel(nn.Module):
     def __init__(self):
@@ -17,14 +18,20 @@ class talkNetModel(nn.Module):
         self.visualConv1D    = visualConv1D()   # Visual Temporal Network Conv1d
 
         # Audio Temporal Encoder 
-        self.audioEncoder  = audioEncoder(layers = [3, 4, 6, 3],  num_filters = [16, 32, 64, 128])
+        self.audioEncoder  = audioEncoder(layers=[3, 4, 6, 3], num_filters=[16, 32, 64, 128])
         
         # Audio-visual Cross Attention
-        self.crossA2V = attentionLayer(d_model = 128, nhead = 8)
-        self.crossV2A = attentionLayer(d_model = 128, nhead = 8)
+        self.crossA2V = attentionLayer(d_model=128, nhead=8)
+        self.crossV2A = attentionLayer(d_model=128, nhead=8)
 
+        self.context = attentionLayer(d_model=128, nhead=8)
         # Audio-visual Self Attention
-        self.selfAV = attentionLayer(d_model = 256, nhead = 8)
+        self.selfAV = attentionLayer(d_model=256, nhead=8)
+
+    def forward_context(self, target_speaker, context_speakers):
+        # query, key, values
+        # tar for query, src for keys and values
+        return self.context(tar=target_speaker, src=context_speakers)
 
     def forward_visual_frontend(self, x):
         B, T, W, H = x.shape  
