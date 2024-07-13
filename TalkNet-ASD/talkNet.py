@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import sys, time, numpy, os, subprocess, pandas
 from tqdm import tqdm
 from loss import lossAV, lossA, lossV
-from model.talkNetModel import talkNetModel
+from model.talkNetModel import TalkNetModel
 
 class TalkNet(nn.Module):
     def __init__(self, **kwargs):
@@ -16,14 +16,14 @@ class TalkNet(nn.Module):
         print(f"using {self.device}")
 
         self.args = kwargs
-        self.model = talkNetModel().to(self.device)
+        self.model = TalkNetModel().to(self.device)
         self.lossAV = lossAV().to(self.device)
         self.lossA = lossA().to(self.device)
         self.lossV = lossV().to(self.device)
         self.optim = torch.optim.Adam(self.parameters(), lr=self.args['lr'])
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optim, step_size=1, gamma=self.args['lrDecay'])
         
-        self.schedule = torch.optim.lr_scheduler.OneCycleLR(self.optim, max_lr=0.0001, steps_per_epoch=len(data_loader), epochs=25)
+        #self.schedule = torch.optim.lr_scheduler.OneCycleLR(self.optim, max_lr=0.0001, steps_per_epoch=len(data_loader), epochs=25)
 
         print(time.strftime("%m-%d %H:%M:%S") + " Model para number = %.2f"%(sum(param.numel() for param in self.model.parameters()) / 1024 / 1024))
 
@@ -56,15 +56,13 @@ class TalkNet(nn.Module):
 
             # cross attention for target speaker and each context speakers
             # queries come from target speaker, keys and values from each context speaker
-            context_features = self.model.forward_context(target_speaker.repeat(3, 1, 1), context_speakers)
-            context_features = context_features.sum(dim=0)
+            target_speaker = self.model.forward_context(target_speaker, context_speakers)
             
             # cross attention for audio and visual embeddings
-            audioEmbed, visualEmbeds = self.model.forward_cross_attention(audioEmbed, target_speaker)
+            audioEmbed, target_speaker = self.model.forward_cross_attention(audioEmbed, target_speaker)
             
             # audio-visual self-attention
             outsAV = self.model.forward_audio_visual_backend(audioEmbed, target_speaker)
-            idkwhattocallthis = torch.concat((context_features, outsAV), dim=1)
 
             outsA = self.model.forward_audio_backend(audioEmbed)
             outsV = self.model.forward_visual_backend(target_speaker)
@@ -73,7 +71,7 @@ class TalkNet(nn.Module):
             labels = labels[0].reshape((-1)).to(self.device)
             
             # Loss
-            nlossAV, _, _, prec = self.lossAV.forward(idkwhattocallthis, labels)
+            nlossAV, _, _, prec = self.lossAV.forward(outsAV, labels)
             nlossA = self.lossA.forward(outsA, labels)
             nlossV = self.lossV.forward(outsV, labels)
 
@@ -92,7 +90,7 @@ class TalkNet(nn.Module):
         sys.stdout.write("\n")      
         return loss/num, lr
 
-    def evaluate_network(self, loader, evalCsvSave, evalOrig, **kwargs):
+    def evaluate_network(self, loader, evalCsvSave, evalOrig):
         self.eval()
         predScores = []
         for (audioFeature, visualFeature, context_speaker_features, labels) in tqdm(loader):
@@ -170,3 +168,15 @@ class TalkNet(nn.Module):
                 sys.stderr.write("Wrong parameter length: %s, model: %s, loaded: %s"%(origName, selfState[name].size(), loadedState[origName].size()))
                 continue
             selfState[name].copy_(param)
+
+        for param in self.model.visualFrontend.parameters():
+            param.requires_grad = False 
+
+        for param in self.model.visualTCN.parameters():
+            param.requires_grad = False
+
+        for param in self.model.visualConv1D.parameters():
+            param.requires_grad = False
+
+        for param in self.model.audioEncoder.parameters():
+            param.requires_grad = False

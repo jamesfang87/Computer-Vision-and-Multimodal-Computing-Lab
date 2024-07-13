@@ -120,7 +120,6 @@ def load_context_speakers(data: pandas.DataFrame, target_speaker: str):
 
     data: DataFrame of *_orig.csv
     target_speaker: the speaker ASD is being conducted on; is represented by the speaker's entity id
-    sample_fn: function to be used to select a subset of context speakers from the full list of candidates
     """
 
     video_id = target_speaker[:13] # video name is contained in the first 13 characters of an entity id
@@ -152,6 +151,25 @@ class TrainLoader():
         self.visual_path = visual_path
         self.batches = open(trial_file_name).read().splitlines() # batch size of 1
         self.data = pandas.read_csv('AVDIAR_ASD/csv/train_orig.csv')
+
+        """
+        samples = open(trial_file_name).read().splitlines()
+        # sort the training set by the length of the videos, shuffle them to make more videos in the same batch belong to different movies
+        sorted_samples = sorted(samples, key=lambda data: (int(data.split('\t')[1]), int(data.split('\t')[-1])), reverse=True)         
+
+        # assign samples to batches
+        start = 0
+        while start != len(sorted_samples):
+            length = int(sorted_samples[start].split('\t')[1])
+            end = min(len(sorted_samples), start + max(int(batch_size / length), 1))
+            self.batches.append(sorted_samples[start:end])
+            if end == len(sorted_samples):
+                break
+            start = end
+
+        for batch in self.batches:
+            print(len(batch))
+        """
 
     def __getitem__(self, index):
         """
